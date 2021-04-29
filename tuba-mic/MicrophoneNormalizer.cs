@@ -7,23 +7,29 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 
+
 namespace tuba_mic
 {
+    // NAudio is an open source .NET audio library written by Mark Heath
+    // https://github.com/naudio/NAudio
+    // this article written by him has a large portion of what I am trying to do already outlined
+    // https://channel9.msdn.com/coding4fun/articles/NET-Voice-Recorder
+
     class MicrophoneNormalizer
     {
-        SampleAggregator maxProcessor;
+        SampleAggregator processor;
         WaveInEvent waveIn;
         UnsignedMixerControl volumeControl;
         float lastPeak;
         RunningMean avgPeak;
-
-        bool isReduced = false;
+        float sampleNorm = 1;
 
         static uint mapLevel(uint val /*0 - 100*/) { return val * ((1 << 16) - 1) / 100; } /*0 - 65535*/
 
         public MicrophoneNormalizer()
         {
-            Console.WriteLine("Release 0.0.6");
+            /*
+            // check devices
             int waveInDevices = WaveIn.DeviceCount;
             for (int waveInDevice = 0; waveInDevice < waveInDevices; waveInDevice++)
             {
@@ -31,8 +37,17 @@ namespace tuba_mic
                 Console.WriteLine("Device {0}: {1}, {2} channels",
                     waveInDevice, deviceInfo.ProductName, deviceInfo.Channels);
             }
+            if (waveInDevices == 0)
+            {
+                Console.WriteLine("No input devices found.");
+                return;
+            }
+            */
 
-            // get device num from input ...
+
+            // TODO: get device num from input ...
+            // for now simply assume the desired
+            // device will show up in the first position
             int selectedDevice = 0;
 
             waveIn = new WaveInEvent();
@@ -44,61 +59,64 @@ namespace tuba_mic
                 Console.WriteLine("Could not get volume control");
                 return;
             }
-            Console.Write("Got volume control handle for device ");
-            Console.WriteLine(waveIn.DeviceNumber);
 
-            maxProcessor = new SampleAggregator();
-            maxProcessor.NotificationCount = 50;
-            maxProcessor.MaximumCalculated += MaximumCalculated;
+            processor = new SampleAggregator();
+            processor.NotificationCount = 50;
+            processor.MaximumCalculated += processor_MaximumCalculated;
             avgPeak = new RunningMean(50);
 
-            int sampleRate = 8000; // 8 kHz
-            int channels = 1; // mono
-            // doesn't matter because we only need volume level
-            waveIn.WaveFormat = new WaveFormat(sampleRate, channels);
+            waveIn.WaveFormat = new WaveFormat(8000, 1); // 8kHz sample rate, mono channel
+            // fidelity doesn't matter because we only need volume level
             waveIn.StartRecording();
+            // supposedly, data is not actually saved anywhere
+            // although I am skeptical of a potential memory leak
         }
-
-        void doNormalization()
+        
+        private void setVolume(uint val)
         {
-            if (lastPeak < 0.2)
+            volumeControl.Value = mapLevel(val);
+            sampleNorm = 100f / (float)val;
+        }
+
+        private void doNormalization()
+        {
+            // this is not fully accurate, and should
+            // be tuned for the specific use case.
+            // of course this still isn't perfect
+
+            if (lastPeak >= 0.7)
             {
-                volumeControl.Value = mapLevel(100);
-                isReduced = false;
+                setVolume(60);
             }
-            else
+            else if (avgPeak.avg() < 0.2)
             {
-                volumeControl.Value = mapLevel(60);
-                isReduced = true;
+                setVolume(100);
             }
         }
 
-        void waveIn_DataAvailable(object sender, WaveInEventArgs e)
+        private void waveIn_DataAvailable(object sender, WaveInEventArgs e)
         {
             for (int index = 0; index < e.BytesRecorded; index += 2)
             {
                 short sample = (short)((e.Buffer[index + 1] << 8) |
                                         e.Buffer[index + 0]);
                 float sample32 = sample / 32768f;
-                maxProcessor.Add(sample32);
+                processor.Add(sample32);
             }
         }
 
-        void MaximumCalculated(object sender, MaxSampleEventArgs e)
+        private void processor_MaximumCalculated(object sender, MaxSampleEventArgs e)
         {
             lastPeak = Math.Max(e.MaxSample, Math.Abs(e.MinSample));
-
-//            Console.Clear();
-//            Console.WriteLine(lastPeak);
-//            for (int x = 0; x < lastPeak * 100; ++x)
-//            {
-//                Console.Write("#");
-//            }
-            if (isReduced)
+            /*
+            Console.Clear();
+            Console.WriteLine(lastPeak);
+            for (int x = 0; x < lastPeak * 100; ++x)
             {
-                lastPeak /= 0.6f;
+                Console.Write("#");
             }
-            avgPeak.add(lastPeak);
+            */
+            avgPeak.add(lastPeak * sampleNorm);
             doNormalization();
         }
 

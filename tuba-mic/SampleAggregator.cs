@@ -1,6 +1,9 @@
 ﻿using System;
 using System.Diagnostics;
 
+// class yoinked from the volume recorder created by Mark Heath
+// https://channel9.msdn.com/coding4fun/articles/NET-Voice-Recorder
+
 namespace tuba_mic
 {
     public class SampleAggregator

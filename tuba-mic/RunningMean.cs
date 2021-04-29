@@ -6,6 +6,10 @@ using System.Threading.Tasks;
 
 namespace tuba_mic
 {
+    // I am pretty sure the functionality of this class
+    // already exists within the buitin Queue class, but
+    // I am unsure of how efficient it is. The efficiency
+    // of the `Average` function may be a concern
     class RunningMean
     {
         private float sum = 0;
